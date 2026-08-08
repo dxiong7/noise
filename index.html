@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <title>Noise</title>
+
+  <!-- Home Screen / standalone app settings -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Noise">
+  <meta name="theme-color" content="#000000">
+
+  <style>
+    :root { --accent: #c47f56; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; height: 100%;
+      background: #000; color: #ddd;
+      font-family: -apple-system, system-ui, sans-serif;
+      -webkit-user-select: none; user-select: none;
+      overflow: hidden;
+    }
+    body {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 40px;
+      padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom);
+      transition: opacity 1.2s ease;
+    }
+    /* dim the whole UI while playing so it's not a bright light at night */
+    body.dim { opacity: .28; }
+
+    .toggle { display: flex; background: #111114; border-radius: 14px; padding: 4px; }
+    .toggle button {
+      border: none; background: none; color: #777;
+      font-size: 15px; font-weight: 600; letter-spacing: .3px;
+      padding: 12px 26px; border-radius: 10px; cursor: pointer;
+      transition: all .2s ease;
+    }
+    .toggle button.sel { background: #222228; color: #fff; }
+
+    #play {
+      width: 172px; height: 172px; border-radius: 50%;
+      border: none; cursor: pointer;
+      background: radial-gradient(circle at 50% 40%, #18181d, #0f0f12);
+      box-shadow: 0 0 0 1px #222, 0 20px 50px -20px var(--accent);
+      color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      transition: transform .15s ease, box-shadow .4s ease;
+    }
+    #play:active { transform: scale(.96); }
+    #play.on { box-shadow: 0 0 0 1px var(--accent), 0 0 55px -8px var(--accent); }
+    #play svg { width: 60px; height: 60px; fill: currentColor; }
+
+    .vol { width: 100%; max-width: 300px; display: flex; align-items: center; gap: 14px; }
+    .vol svg { width: 20px; height: 20px; fill: #555; flex: none; }
+    input[type=range] {
+      -webkit-appearance: none; appearance: none;
+      width: 100%; height: 4px; border-radius: 4px; background: #26262c; outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 26px; height: 26px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.5);
+    }
+
+    /* Sleep timer */
+    .timer { display: flex; gap: 8px; }
+    .timer button {
+      border: none; background: #111114; color: #888;
+      font-size: 13px; font-weight: 600; padding: 9px 15px; border-radius: 10px; cursor: pointer;
+      transition: all .2s ease;
+    }
+    .timer button.sel { background: var(--accent); color: #1a1108; }
+    .label { font-size: 11px; color: #555; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: -26px; }
+    #status { position: fixed; bottom: 16px; font-size: 12px; color: #555; min-height: 16px; }
+
+    /* Sound settings */
+    #gear { border: none; background: none; color: #666; font-size: 13px; font-weight: 600;
+      cursor: pointer; padding: 4px; margin-top: -14px; }
+    .panel { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 300px;
+      background: #0f0f13; border: 1px solid #1c1c22; border-radius: 16px; padding: 20px; margin-top: -18px; }
+    .panel.hidden { display: none; }
+    .prow { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 12px; }
+    .prow label { font-size: 13px; color: #999; }
+    #reset { border: none; background: #17171c; color: #888; font-size: 13px; font-weight: 600;
+      padding: 10px; border-radius: 10px; cursor: pointer; margin-top: 2px; }
+  </style>
+</head>
+<body>
+
+  <div class="toggle" id="type">
+    <button data-type="brown" class="sel">Brown</button>
+    <button data-type="white">White</button>
+  </div>
+
+  <button id="play" aria-label="Play">
+    <svg id="icon" viewBox="0 0 24 24"><path id="ipath" d="M8 5v14l11-7z"/></svg>
+  </button>
+
+  <div class="vol">
+    <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
+    <input type="range" id="volume" min="0" max="100" value="55">
+  </div>
+
+  <div class="label">Sleep Timer</div>
+  <div class="timer" id="timer">
+    <button data-min="0" class="sel">Off</button>
+    <button data-min="30">30m</button>
+    <button data-min="60">1h</button>
+    <button data-min="120">2h</button>
+  </div>
+
+  <button id="gear">Adjust sound ▾</button>
+  <div id="panel" class="panel hidden">
+    <div class="prow"><label>Depth</label><input type="range" id="p-depth"  min="0" max="100"></div>
+    <div class="prow"><label>Rumble</label><input type="range" id="p-rumble" min="0" max="100"></div>
+    <div class="prow"><label>Body</label><input type="range" id="p-body"   min="0" max="100"></div>
+    <div class="prow"><label>Air</label><input type="range" id="p-air"    min="0" max="100"></div>
+    <button id="reset">Reset to default</button>
+  </div>
+
+  <div id="status"></div>
+
+  <!-- plain media element = keeps playing when the screen locks -->
+  <audio id="audio" loop></audio>
+
+<script>
+const SR = 22050;          // half CD-rate: half the memory/CPU, plenty for noise
+const LOOP_SECONDS = 30;
+
+// ---- adjustable brown-noise character (deep + layered by default) ----
+const DEFAULTS = { depth: 65, rumble: 90, body: 60, air: 25 };
+function loadParams() {
+  try { return Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('brownParams') || '{}')); }
+  catch (e) { return Object.assign({}, DEFAULTS); }
+}
+function saveParams() { try { localStorage.setItem('brownParams', JSON.stringify(brownParams)); } catch (e) {} }
+let brownParams = loadParams();
+
+// ---------- generate seamless-looping noise as a WAV blob ----------
+// one continuous brown-noise stream (leaky integral of white noise).
+// smaller leak = slower wander = deeper.
+function brownStream(n, leak) {
+  const out = new Float32Array(n);
+  let last = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    last = (last + leak * w) / (1 + leak);
+    out[i] = last;
+  }
+  return out;
+}
+
+// one-pole low-pass; lower cutoff (Hz) = darker/deeper
+function lowpass(buf, fc) {
+  const a = 1 - Math.exp(-2 * Math.PI * fc / SR);
+  let y = 0;
+  for (let i = 0; i < buf.length; i++) { y += a * (buf[i] - y); buf[i] = y; }
+  return buf;
+}
+
+// A "dense" layer: sum several INDEPENDENT brown streams, then low-pass.
+// More voices = the short-term energy averages out, so random low-freq
+// bunching stops reading as phantom volume dips. Also fills each moment
+// with a fuller range of frequencies.
+function denseBrown(n, leak, fc, voices) {
+  const acc = new Float32Array(n);
+  for (let v = 0; v < voices; v++) {
+    const s = brownStream(n, leak);
+    for (let i = 0; i < n; i++) acc[i] += s[i];
+  }
+  const k = 1 / Math.sqrt(voices);            // keep amplitude consistent
+  for (let i = 0; i < n; i++) acc[i] *= k;
+  return lowpass(acc, fc);
+}
+
+// scale a buffer to unit RMS so a layer's mix gain = its perceived loudness
+function rmsNorm(buf) {
+  let s = 0;
+  for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+  const r = Math.sqrt(s / buf.length) || 1;
+  for (let i = 0; i < buf.length; i++) buf[i] /= r;
+  return buf;
+}
+
+function genSamples(type) {
+  const L = LOOP_SECONDS * SR;
+  const X = Math.floor(SR * 0.5);       // crossfade to hide the loop seam
+  const N = L + X;
+  let mix = new Float32Array(N);
+
+  if (type === 'white') {
+    for (let i = 0; i < N; i++) mix[i] = (Math.random() * 2 - 1) * 0.85;
+  } else {
+    // DEEP layered brown. Each layer = many decorrelated streams (density, so
+    // the level stays steady) and is RMS-normalized so its dial maps straight
+    // to how loud it sits in the mix.
+    const p = brownParams;
+    const sub  = rmsNorm(denseBrown(N, 0.008,  90, 8));   // deep rumble
+    const body = rmsNorm(denseBrown(N, 0.020, 350, 6));   // mid-low body
+    const air  = rmsNorm(denseBrown(N, 0.040, 1200, 4));  // gentle presence
+    const subG  = (p.rumble / 100) * 1.00;
+    const bodyG = (p.body   / 100) * 0.70;
+    const airG  = (p.air    / 100) * 0.35;
+    for (let i = 0; i < N; i++) mix[i] = sub[i] * subG + body[i] * bodyG + air[i] * airG;
+    // "Depth" master: roll off the harsher highs. Applied twice = steeper
+    // (12 dB/oct) so the hiss is really gone, not just dimmed.
+    const fc = 140 + Math.pow(1 - p.depth / 100, 1.5) * 1900;  // depth 100->140Hz, 0->2040Hz
+    lowpass(mix, fc);
+    lowpass(mix, fc);
+  }
+
+  // normalize to a safe peak
+  let peak = 1e-6;
+  for (let i = 0; i < N; i++) { const a = Math.abs(mix[i]); if (a > peak) peak = a; }
+  const g = 0.9 / peak;
+
+  const out = new Float32Array(L);
+  for (let i = 0; i < L; i++) {
+    const s = (i < X) ? mix[i] * (i / X) + mix[L + i] * (1 - i / X) : mix[i];
+    out[i] = s * g;
+  }
+  return out;
+}
+
+function toWavBlob(samples) {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, samples.length * 2, true);
+  let o = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(o, s * 32767, true); o += 2;
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+// ---- gapless playback via Web Audio. A looping AudioBufferSourceNode is
+// sample-accurate; <audio loop> tears down/re-inits the pipeline on iOS and
+// leaves an audible ~1s gap. ----
+let ctx = null, gain = null, source = null;
+const buffers = {};
+
+function ensureCtx() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  gain = ctx.createGain();
+  gain.connect(ctx.destination);
+}
+function bufferFor(t) {
+  if (!buffers[t]) {
+    const data = genSamples(t);
+    const b = ctx.createBuffer(1, data.length, SR);
+    b.copyToChannel(data, 0);
+    buffers[t] = b;
+  }
+  return buffers[t];
+}
+function startSource() {
+  stopSource();
+  source = ctx.createBufferSource();
+  source.buffer = bufferFor(type);
+  source.loop = true;                 // seamless: buffer is crossfaded end->start
+  source.connect(gain);
+  source.start();
+}
+function stopSource() {
+  if (!source) return;
+  try { source.stop(); } catch (e) {}
+  source.disconnect();
+  source = null;
+}
+
+// A near-silent looping media element keeps the iOS audio session alive so
+// the Web Audio keeps running when the screen locks.
+let keepEl = null;
+function startKeepalive() {
+  if (!keepEl) {
+    const n = SR, data = new Float32Array(n);
+    for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * 0.0002; // ~-74 dB, inaudible
+    keepEl = document.getElementById('audio');
+    keepEl.src = URL.createObjectURL(toWavBlob(data));
+    keepEl.loop = true;
+  }
+  keepEl.play().catch(() => {});
+}
+function stopKeepalive() { if (keepEl) keepEl.pause(); }
+
+// re-bake brown with the current dial settings; hot-swap if it's playing
+let regenTimer = null;
+function refreshBrown() {
+  delete buffers.brown;
+  saveParams();
+  if (playing && type === 'brown') startSource();
+}
+function scheduleRefresh() { clearTimeout(regenTimer); regenTimer = setTimeout(refreshBrown, 300); }
+
+// ---------- playback ----------
+const playBtn = document.getElementById('play');
+const ipath  = document.getElementById('ipath');
+const volume = document.getElementById('volume');
+const status = document.getElementById('status');
+const PLAY = 'M8 5v14l11-7z', STOP = 'M6 6h12v12H6z';
+
+let type = 'brown', playing = false;
+let sleepTimeout = null, sleepMin = 0;
+
+function targetVol() { return volume.value / 100; }
+
+async function start() {
+  ensureCtx();
+  if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) {} }
+  gain.gain.value = targetVol();
+  startKeepalive();
+  startSource();
+  playing = true;
+  ipath.setAttribute('d', STOP);
+  playBtn.classList.add('on');
+  document.body.classList.add('dim'); // dim UI so it's not a night-light
+  armSleepTimer();
+  updateStatus();
+}
+
+function stop() {
+  clearTimeout(sleepTimeout);
+  stopSource();
+  stopKeepalive();
+  playing = false;
+  ipath.setAttribute('d', PLAY);
+  playBtn.classList.remove('on');
+  document.body.classList.remove('dim');
+  updateStatus();
+}
+
+function toggle() { playing ? stop() : start(); }
+
+// ---------- sleep timer (stops immediately at time) ----------
+function armSleepTimer() {
+  clearTimeout(sleepTimeout);
+  if (!sleepMin) return;
+  sleepTimeout = setTimeout(stop, sleepMin * 60000);
+}
+
+function updateStatus() {
+  status.textContent = playing
+    ? (sleepMin ? `Playing · sleep in ${sleepMin >= 60 ? sleepMin/60+'h' : sleepMin+'m'}` : 'Playing')
+    : '';
+}
+
+// ---------- UI wiring ----------
+playBtn.addEventListener('click', toggle);
+
+volume.addEventListener('input', () => { if (playing && gain) gain.gain.value = targetVol(); });
+
+document.getElementById('type').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  type = btn.dataset.type;
+  document.querySelectorAll('#type button').forEach(b => b.classList.toggle('sel', b === btn));
+  if (playing) startSource();
+});
+
+document.getElementById('timer').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  sleepMin = +btn.dataset.min;
+  document.querySelectorAll('#timer button').forEach(b => b.classList.toggle('sel', b === btn));
+  if (playing) armSleepTimer();
+  updateStatus();
+});
+
+// ---------- sound dials ----------
+const panel = document.getElementById('panel');
+['depth', 'rumble', 'body', 'air'].forEach(k => {
+  const el = document.getElementById('p-' + k);
+  el.value = brownParams[k];
+  el.addEventListener('input', () => { brownParams[k] = +el.value; scheduleRefresh(); });
+});
+document.getElementById('gear').addEventListener('click', () => panel.classList.toggle('hidden'));
+document.getElementById('reset').addEventListener('click', () => {
+  brownParams = Object.assign({}, DEFAULTS);
+  ['depth', 'rumble', 'body', 'air'].forEach(k => document.getElementById('p-' + k).value = brownParams[k]);
+  refreshBrown();
+});
+
+// tapping anywhere brightens the UI briefly so you can find the controls
+document.body.addEventListener('click', () => {
+  if (!playing) return;
+  document.body.classList.remove('dim');
+  clearTimeout(window._redim);
+  window._redim = setTimeout(() => {
+    if (playing && panel.classList.contains('hidden')) document.body.classList.add('dim');
+  }, 4000);
+});
+
+// lock-screen / control-center buttons
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.setActionHandler('play', () => !playing && start());
+  navigator.mediaSession.setActionHandler('pause', () => playing && stop());
+}
+</script>
+</body>
+</html>
