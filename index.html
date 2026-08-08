@@ -10,6 +10,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Noise">
   <meta name="theme-color" content="#000000">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icon-180.png">
 
   <style>
     :root { --accent: #c47f56; }
@@ -122,8 +124,9 @@
 
   <div id="status"></div>
 
-  <!-- plain media element = keeps playing when the screen locks -->
-  <audio id="audio" loop></audio>
+  <!-- plays the Web Audio stream; a live media element keeps iOS audio
+       running when the screen locks -->
+  <audio id="audio" playsinline></audio>
 
 <script>
 const SR = 22050;          // half CD-rate: half the memory/CPU, plenty for noise
@@ -224,33 +227,23 @@ function genSamples(type) {
   return out;
 }
 
-function toWavBlob(samples) {
-  const buf = new ArrayBuffer(44 + samples.length * 2);
-  const v = new DataView(buf);
-  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  str(0, 'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); str(8, 'WAVE');
-  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  str(36, 'data'); v.setUint32(40, samples.length * 2, true);
-  let o = 44;
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    v.setInt16(o, s * 32767, true); o += 2;
-  }
-  return new Blob([buf], { type: 'audio/wav' });
-}
-
 // ---- gapless playback via Web Audio. A looping AudioBufferSourceNode is
 // sample-accurate; <audio loop> tears down/re-inits the pipeline on iOS and
 // leaves an audible ~1s gap. ----
-let ctx = null, gain = null, source = null;
+let ctx = null, gain = null, dest = null, mediaEl = null, source = null;
 const buffers = {};
 
 function ensureCtx() {
   if (ctx) return;
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   gain = ctx.createGain();
-  gain.connect(ctx.destination);
+  // Route the (gapless) Web Audio graph into a MediaStream, then play that
+  // stream through a real <audio> element. A media element playing live
+  // audio gets iOS background-audio rights, so it keeps going when locked.
+  dest = ctx.createMediaStreamDestination();
+  gain.connect(dest);
+  mediaEl = document.getElementById('audio');
+  mediaEl.srcObject = dest.stream;
 }
 function bufferFor(t) {
   if (!buffers[t]) {
@@ -275,21 +268,6 @@ function stopSource() {
   source.disconnect();
   source = null;
 }
-
-// A near-silent looping media element keeps the iOS audio session alive so
-// the Web Audio keeps running when the screen locks.
-let keepEl = null;
-function startKeepalive() {
-  if (!keepEl) {
-    const n = SR, data = new Float32Array(n);
-    for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * 0.0002; // ~-74 dB, inaudible
-    keepEl = document.getElementById('audio');
-    keepEl.src = URL.createObjectURL(toWavBlob(data));
-    keepEl.loop = true;
-  }
-  keepEl.play().catch(() => {});
-}
-function stopKeepalive() { if (keepEl) keepEl.pause(); }
 
 // re-bake brown with the current dial settings; hot-swap if it's playing
 let regenTimer = null;
@@ -316,8 +294,8 @@ async function start() {
   ensureCtx();
   if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) {} }
   gain.gain.value = targetVol();
-  startKeepalive();
   startSource();
+  try { await mediaEl.play(); } catch (e) {}   // media element carries the stream in the background
   playing = true;
   ipath.setAttribute('d', STOP);
   playBtn.classList.add('on');
@@ -329,7 +307,7 @@ async function start() {
 function stop() {
   clearTimeout(sleepTimeout);
   stopSource();
-  stopKeepalive();
+  if (mediaEl) mediaEl.pause();
   playing = false;
   ipath.setAttribute('d', PLAY);
   playBtn.classList.remove('on');
@@ -400,6 +378,11 @@ document.body.addEventListener('click', () => {
 if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('play', () => !playing && start());
   navigator.mediaSession.setActionHandler('pause', () => playing && stop());
+}
+
+// offline support: cache the app so it launches instantly with no network
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
 </script>
 </body>
