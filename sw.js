@@ -1,5 +1,5 @@
-// Bump CACHE (e.g. noise-v2) whenever the app changes, to force an update.
-const CACHE = 'noise-v3';
+// Bump CACHE (e.g. noise-v5) whenever the app changes, to force an update.
+const CACHE = 'noise-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -20,8 +20,18 @@ self.addEventListener('activate', e => {
   );
 });
 
-// cache-first: launches instantly and works fully offline
+// network-first: always fetch the freshest file when online (so updates land
+// immediately), fall back to cache when offline. Playback itself never hits
+// the network, so this costs only a tiny HTML/JS fetch at launch.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+  e.respondWith(
+    fetch(e.request)
+      .then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(e.request))
+  );
 });

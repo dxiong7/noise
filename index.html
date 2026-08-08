@@ -198,8 +198,8 @@ function genSamples(type) {
     // "soft white": full-band white noise with the harsh sizzle rolled off
     // (steep 2-pole low-pass) so it's airy but not piercing.
     for (let i = 0; i < N; i++) mix[i] = (Math.random() * 2 - 1);
-    lowpass(mix, 3200);
-    lowpass(mix, 3200);
+    lowpass(mix, 2200);
+    lowpass(mix, 2200);
   } else if (type === 'pink') {
     // pink noise (-3 dB/oct) via Paul Kellet's filter — the balanced middle
     // between hissy white and rumbly brown. Gentle top rolloff to de-harsh.
@@ -235,10 +235,13 @@ function genSamples(type) {
     lowpass(mix, fc);
   }
 
-  // normalize to a safe peak
+  // normalize to a safe peak, then apply a per-type loudness trim so white/
+  // pink don't blast louder than brown at the same volume (the ear is much
+  // more sensitive to their higher frequencies).
+  const TRIM = { brown: 1.0, pink: 0.6, white: 0.42 };
   let peak = 1e-6;
   for (let i = 0; i < N; i++) { const a = Math.abs(mix[i]); if (a > peak) peak = a; }
-  const g = 0.9 / peak;
+  const g = (0.9 / peak) * (TRIM[type] || 1);
 
   const out = new Float32Array(L);
   for (let i = 0; i < L; i++) {
