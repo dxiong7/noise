@@ -1,5 +1,5 @@
 // Bump CACHE (e.g. noise-v2) whenever the app changes, to force an update.
-const CACHE = 'noise-v1';
+const CACHE = 'noise-v2';
 const ASSETS = [
   './',
   './index.html',

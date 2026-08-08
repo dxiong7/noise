@@ -194,7 +194,11 @@ function genSamples(type) {
   let mix = new Float32Array(N);
 
   if (type === 'white') {
-    for (let i = 0; i < N; i++) mix[i] = (Math.random() * 2 - 1) * 0.85;
+    // "soft white": full-band white noise with the harsh sizzle rolled off
+    // (steep 2-pole low-pass) so it's airy but not piercing.
+    for (let i = 0; i < N; i++) mix[i] = (Math.random() * 2 - 1);
+    lowpass(mix, 3200);
+    lowpass(mix, 3200);
   } else {
     // DEEP layered brown. Each layer = many decorrelated streams (density, so
     // the level stays steady) and is RMS-normalized so its dial maps straight
