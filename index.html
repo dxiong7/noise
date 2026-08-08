@@ -93,6 +93,7 @@
 
   <div class="toggle" id="type">
     <button data-type="brown" class="sel">Brown</button>
+    <button data-type="pink">Pink</button>
     <button data-type="white">White</button>
   </div>
 
@@ -199,6 +200,22 @@ function genSamples(type) {
     for (let i = 0; i < N; i++) mix[i] = (Math.random() * 2 - 1);
     lowpass(mix, 3200);
     lowpass(mix, 3200);
+  } else if (type === 'pink') {
+    // pink noise (-3 dB/oct) via Paul Kellet's filter — the balanced middle
+    // between hissy white and rumbly brown. Gentle top rolloff to de-harsh.
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < N; i++) {
+      const w = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + w * 0.0555179;
+      b1 = 0.99332 * b1 + w * 0.0750759;
+      b2 = 0.96900 * b2 + w * 0.1538520;
+      b3 = 0.86650 * b3 + w * 0.3104856;
+      b4 = 0.55000 * b4 + w * 0.5329522;
+      b5 = -0.7616 * b5 - w * 0.0168980;
+      mix[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.2;
+      b6 = w * 0.115926;
+    }
+    lowpass(mix, 4000);   // shave the very top so it stays soft
   } else {
     // DEEP layered brown. Each layer = many decorrelated streams (density, so
     // the level stays steady) and is RMS-normalized so its dial maps straight
